@@ -1,0 +1,420 @@
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import SimulationForm from '@/components/SimulationForm'
+import SweepConfigComponent from '@/components/SweepConfig'
+import SpectraPlot from '@/components/SpectraPlot'
+import PhasePlot from '@/components/PhasePlot'
+import {
+  SimulationConfig,
+  SweepParameter,
+  SimulationResult,
+  JobInfo,
+  defaultConfig,
+  runSimulation,
+  previewSimulation,
+  startSweep,
+  getSweepStatus,
+  getSweepResults,
+  saveConfig,
+  loadConfig,
+  listConfigs,
+  saveResults,
+  checkHealth,
+  connectToProgress,
+} from '@/lib/api'
+import {
+  Play,
+  Square,
+  Save,
+  FolderOpen,
+  Download,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  Cpu,
+} from 'lucide-react'
+
+export default function HomePage() {
+  // State
+  const [config, setConfig] = useState<SimulationConfig>(defaultConfig)
+  const [sweeps, setSweeps] = useState<SweepParameter[]>([])
+  const [result, setResult] = useState<SimulationResult | null>(null)
+  const [sweepResults, setSweepResults] = useState<SimulationResult[]>([])
+  
+  // UI State
+  const [isRunning, setIsRunning] = useState(false)
+  const [progress, setProgress] = useState<JobInfo | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [cpuCount, setCpuCount] = useState<number>(0)
+  const [configName, setConfigName] = useState('')
+  const [savedConfigs, setSavedConfigs] = useState<{ name: string; path: string }[]>([])
+  
+  // Check backend health on mount
+  useEffect(() => {
+    checkHealth()
+      .then((data) => setCpuCount(data.cpu_count))
+      .catch((err) => setError('Backend not running. Start the server with: uvicorn main:app'))
+  }, [])
+
+  // Load saved configs
+  useEffect(() => {
+    listConfigs()
+      .then((data) => setSavedConfigs(data.configs))
+      .catch(() => {})
+  }, [])
+
+  // Check if dark mode is enabled
+  const isDarkMode = document.documentElement.classList.contains('dark')
+
+  // Run single simulation
+  const handleRunSimulation = async () => {
+    setIsRunning(true)
+    setError(null)
+    setResult(null)
+
+    try {
+      const simResult = await runSimulation(config)
+      setResult(simResult)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Simulation failed')
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  // Run parameter sweep
+  const handleRunSweep = async () => {
+    setIsRunning(true)
+    setError(null)
+    setSweepResults([])
+    setProgress(null)
+
+    try {
+      const sweepConfig = {
+        base_config: config,
+        sweeps: sweeps,
+      }
+
+      const { job_id } = await startSweep(sweepConfig)
+
+      // Connect to WebSocket for progress updates
+      const ws = connectToProgress(
+        job_id,
+        (info) => {
+          setProgress(info)
+          if (info.status === 'completed') {
+            // Fetch results
+            getSweepResults(job_id).then((data) => {
+              setSweepResults(data.results)
+              setIsRunning(false)
+            })
+          } else if (info.status === 'failed') {
+            setError(info.error || 'Sweep failed')
+            setIsRunning(false)
+          }
+        },
+        () => setError('WebSocket connection failed'),
+        () => {}
+      )
+
+      // Cleanup on unmount would go here
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start sweep')
+      setIsRunning(false)
+    }
+  }
+
+  // Save configuration
+  const handleSaveConfig = async () => {
+    try {
+      await saveConfig(config, configName || undefined)
+      const data = await listConfigs()
+      setSavedConfigs(data.configs)
+      setConfigName('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save config')
+    }
+  }
+
+  // Load configuration
+  const handleLoadConfig = async (name: string) => {
+    try {
+      const loaded = await loadConfig(name)
+      setConfig(loaded)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load config')
+    }
+  }
+
+  // Save results
+  const handleSaveResults = async (format: 'json' | 'csv') => {
+    if (!result) return
+    try {
+      await saveResults(result, format)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save results')
+    }
+  }
+
+  // Calculate preview info
+  const numWavelengths = Math.floor(
+    Math.abs(config.wavelength.end - config.wavelength.start) / config.wavelength.step
+  ) + 1
+  
+  const numSweepConfigs = sweeps.reduce((total, sweep) => {
+    const points = Math.floor(Math.abs(sweep.end - sweep.start) / sweep.step) + 1
+    return total * points
+  }, 1)
+
+  return (
+    <div className="space-y-6">
+      {/* Header with status */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Simulation Builder</h1>
+          <p className="text-muted-foreground">
+            Configure and run S4 photonic crystal slab simulations
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Cpu className="h-4 w-4" />
+          <span>{cpuCount} CPU cores available</span>
+        </div>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="flex items-center gap-2 p-4 bg-destructive/10 border border-destructive rounded-md text-destructive">
+          <AlertCircle className="h-5 w-5" />
+          <span>{error}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setError(null)}
+            className="ml-auto"
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column: Configuration */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Simulation Form */}
+          <SimulationForm
+            config={config}
+            onChange={setConfig}
+            disabled={isRunning}
+          />
+
+          {/* Parameter Sweep */}
+          <SweepConfigComponent
+            sweeps={sweeps}
+            onChange={setSweeps}
+            disabled={isRunning}
+          />
+        </div>
+
+        {/* Right Column: Actions & Status */}
+        <div className="space-y-6">
+          {/* Run Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Run Simulation</CardTitle>
+              <CardDescription>
+                {sweeps.length > 0
+                  ? `Sweep: ${numSweepConfigs} configs × ${numWavelengths} wavelengths`
+                  : `Single: ${numWavelengths} wavelength points`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {sweeps.length === 0 ? (
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={handleRunSimulation}
+                  disabled={isRunning}
+                >
+                  {isRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Running...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Run Simulation
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={handleRunSweep}
+                  disabled={isRunning}
+                >
+                  {isRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Sweeping...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Run Sweep ({numSweepConfigs} configs)
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* Progress */}
+              {progress && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{progress.progress?.message}</span>
+                    <span>{progress.progress?.percent.toFixed(1)}%</span>
+                  </div>
+                  <Progress value={progress.progress?.percent || 0} />
+                  {progress.progress?.estimated_remaining_seconds && (
+                    <p className="text-xs text-muted-foreground">
+                      Est. remaining: {Math.ceil(progress.progress.estimated_remaining_seconds)}s
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Save/Load Config */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Configuration</CardTitle>
+              <CardDescription>Save and load simulation setups</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Config name"
+                  value={configName}
+                  onChange={(e) => setConfigName(e.target.value)}
+                />
+                <Button onClick={handleSaveConfig} variant="outline">
+                  <Save className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {savedConfigs.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Saved configs:</p>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {savedConfigs.map((cfg) => (
+                      <Button
+                        key={cfg.name}
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-start"
+                        onClick={() => handleLoadConfig(cfg.name)}
+                      >
+                        <FolderOpen className="h-4 w-4 mr-2" />
+                        {cfg.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Export Results */}
+          {result && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  Results Ready
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleSaveResults('json')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Save as JSON
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => handleSaveResults('csv')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Save as CSV
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* Results Visualization */}
+      {result && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Results</CardTitle>
+            <CardDescription>
+              n={result.config.n_silicon}, a={result.config.lattice_constant}µm, 
+              r={result.config.radius}µm, t={result.config.thickness}µm
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="spectra">
+              <TabsList>
+                <TabsTrigger value="spectra">Spectra (T/R/A)</TabsTrigger>
+                <TabsTrigger value="phase">Phase</TabsTrigger>
+              </TabsList>
+              <TabsContent value="spectra">
+                <SpectraPlot result={result} darkMode={isDarkMode} />
+              </TabsContent>
+              <TabsContent value="phase">
+                <PhasePlot result={result} darkMode={isDarkMode} />
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sweep Results */}
+      {sweepResults.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sweep Results ({sweepResults.length} configurations)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {sweepResults.slice(0, 4).map((res, idx) => (
+                <div key={idx} className="border rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-2">
+                    n={res.config.n_silicon}, r={res.config.radius}µm
+                  </p>
+                  <SpectraPlot result={res} darkMode={isDarkMode} />
+                </div>
+              ))}
+            </div>
+            {sweepResults.length > 4 && (
+              <p className="text-center text-muted-foreground mt-4">
+                And {sweepResults.length - 4} more...
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}

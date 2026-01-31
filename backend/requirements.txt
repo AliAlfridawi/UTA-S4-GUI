@@ -1,0 +1,23 @@
+# S4 Photonic Simulation GUI - Backend Dependencies
+
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Data validation
+pydantic>=2.5.0
+
+# Scientific computing
+numpy>=1.24.0
+
+# S4 is installed via conda: conda install -c conda-forge s4
+
+# For matplotlib plotting (optional, frontend uses Plotly)
+matplotlib>=3.7.0
+
+# WebSocket support
+websockets>=12.0
+
+# File handling
+python-multipart>=0.0.6
+aiofiles>=23.2.0
