@@ -2,8 +2,6 @@
 
 A graphical user interface for the Stanford S4 library, designed to accelerate photonic crystal slab (PCS) simulation workflows for researchers.
 
-![S4 GUI Screenshot](docs/screenshot.png)
-
 ## Features
 
 - **🎛️ Visual Simulation Builder**: Configure all simulation parameters through an intuitive form interface
