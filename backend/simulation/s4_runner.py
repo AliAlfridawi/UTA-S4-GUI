@@ -22,7 +22,7 @@ def get_cpu_count() -> int:
     return multiprocessing.cpu_count()
 
 
-def create_s4_simulation(config: SimulationConfig) -> S4.Simulation:
+def create_s4_simulation(config: SimulationConfig) -> "S4.Simulation":
     """
     Initialize S4 simulation object with materials and layers.
     
@@ -76,7 +76,7 @@ def create_s4_simulation(config: SimulationConfig) -> S4.Simulation:
 
 
 def run_single_wavelength(
-    S: S4.Simulation,
+    S: "S4.Simulation",
     wavelength: float,
     config: SimulationConfig,
     compute_power: bool = True,

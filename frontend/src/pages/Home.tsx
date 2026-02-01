@@ -10,16 +10,12 @@ import SpectraPlot from '@/components/SpectraPlot'
 import PhasePlot from '@/components/PhasePlot'
 import { toast } from '@/hooks/use-toast'
 import { ValidationResult } from '@/lib/validation'
+import { useSimulation } from '@/context/SimulationContext'
 import {
-  SimulationConfig,
-  SweepParameter,
-  SimulationResult,
   JobInfo,
-  defaultConfig,
+  SimulationResult,
   runSimulation,
-  previewSimulation,
   startSweep,
-  getSweepStatus,
   getSweepResults,
   saveConfig,
   loadConfig,
@@ -30,7 +26,6 @@ import {
 } from '@/lib/api'
 import {
   Play,
-  Square,
   Save,
   FolderOpen,
   Download,
@@ -41,13 +36,22 @@ import {
 } from 'lucide-react'
 
 export default function HomePage() {
-  // State
-  const [config, setConfig] = useState<SimulationConfig>(defaultConfig)
-  const [sweeps, setSweeps] = useState<SweepParameter[]>([])
-  const [result, setResult] = useState<SimulationResult | null>(null)
-  const [sweepResults, setSweepResults] = useState<SimulationResult[]>([])
+  // Use global state from context
+  const {
+    config,
+    setConfig,
+    result,
+    setResult,
+    sweepResults,
+    setSweepResults,
+    sweeps,
+    setSweeps,
+    graphSettings,
+    updateGraphSettings,
+    clearResults: _clearResults,
+  } = useSimulation()
   
-  // UI State
+  // UI State (local only)
   const [isRunning, setIsRunning] = useState(false)
   const [progress, setProgress] = useState<JobInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +74,7 @@ export default function HomePage() {
   useEffect(() => {
     checkHealth()
       .then((data) => setCpuCount(data.cpu_count))
-      .catch((err) => setError('Backend not running. Start the server with: uvicorn main:app'))
+      .catch(() => setError('Backend not running. Start the server with: uvicorn main:app'))
   }, [])
 
   // Load saved configs
@@ -136,7 +140,7 @@ export default function HomePage() {
       toast.info('Sweep Started', `Running ${sweeps.length} parameter sweep`)
 
       // Connect to WebSocket for progress updates
-      const ws = connectToProgress(
+      connectToProgress(
         job_id,
         (info) => {
           setProgress(info)
@@ -431,10 +435,49 @@ export default function HomePage() {
                 <TabsTrigger value="phase">Phase</TabsTrigger>
               </TabsList>
               <TabsContent value="spectra">
-                <SpectraPlot result={result} darkMode={isDarkMode} />
+                <SpectraPlot
+                  result={result}
+                  darkMode={isDarkMode}
+                  title={graphSettings.spectraTitle}
+                  onTitleChange={(title) => updateGraphSettings({ spectraTitle: title })}
+                  visibleTraces={{
+                    transmittance: graphSettings.visibleTraces.transmittance,
+                    reflectance: graphSettings.visibleTraces.reflectance,
+                    absorptance: graphSettings.visibleTraces.absorptance,
+                  }}
+                  onVisibleTracesChange={(traces) =>
+                    updateGraphSettings({
+                      visibleTraces: { ...graphSettings.visibleTraces, ...traces },
+                    })
+                  }
+                  wavelengthMin={graphSettings.wavelengthRange.min}
+                  wavelengthMax={graphSettings.wavelengthRange.max}
+                  onWavelengthRangeChange={(min, max) =>
+                    updateGraphSettings({ wavelengthRange: { min, max } })
+                  }
+                />
               </TabsContent>
               <TabsContent value="phase">
-                <PhasePlot result={result} darkMode={isDarkMode} />
+                <PhasePlot
+                  result={result}
+                  darkMode={isDarkMode}
+                  title={graphSettings.phaseTitle}
+                  onTitleChange={(title) => updateGraphSettings({ phaseTitle: title })}
+                  visibleTraces={{
+                    transmissionPhase: graphSettings.visibleTraces.transmissionPhase,
+                    reflectionPhase: graphSettings.visibleTraces.reflectionPhase,
+                  }}
+                  onVisibleTracesChange={(traces) =>
+                    updateGraphSettings({
+                      visibleTraces: { ...graphSettings.visibleTraces, ...traces },
+                    })
+                  }
+                  wavelengthMin={graphSettings.wavelengthRange.min}
+                  wavelengthMax={graphSettings.wavelengthRange.max}
+                  onWavelengthRangeChange={(min, max) =>
+                    updateGraphSettings({ wavelengthRange: { min, max } })
+                  }
+                />
               </TabsContent>
             </Tabs>
           </CardContent>
@@ -486,7 +529,7 @@ function SweepResultsPanel({
               <p className="text-sm text-muted-foreground mb-2">
                 n={res.config.n_silicon}, r={res.config.radius}µm
               </p>
-              <SpectraPlot result={res} darkMode={isDarkMode} />
+              <SpectraPlot result={res} darkMode={isDarkMode} compact />
             </div>
           ))}
         </div>

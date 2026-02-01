@@ -14,7 +14,6 @@ import {
   deleteResults,
 } from '@/lib/api'
 import {
-  FolderOpen,
   Download,
   Trash2,
   FileJson,
@@ -35,7 +34,7 @@ export default function ResultsPage() {
   const [savedResults, setSavedResults] = useState<SavedResult[]>([])
   const [selectedResult, setSelectedResult] = useState<SimulationResult | null>(null)
   const [selectedName, setSelectedName] = useState<string>('')
-  const [isLoading, setIsLoading] = useState(false)
+  const [_isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 

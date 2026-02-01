@@ -5,11 +5,14 @@ import json
 import csv
 import os
 import re
+import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from ..simulation.models import SimulationConfig, SimulationResult, SweepConfig
+# Add parent directory to path for imports when running as main
+if __name__ != "__main__":
+    from simulation.models import SimulationConfig, SimulationResult, SweepConfig
 
 
 # Regex pattern for valid filenames: alphanumeric, underscores, hyphens, dots

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { Moon, Sun, Atom, BarChart3, Settings, Menu, X } from 'lucide-react'
 import { Toaster } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
+import { SimulationProvider } from '@/context/SimulationContext'
 import HomePage from './pages/Home'
 import ResultsPage from './pages/Results'
 
@@ -129,7 +130,9 @@ function AppContent() {
 function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <SimulationProvider>
+        <AppContent />
+      </SimulationProvider>
     </BrowserRouter>
   )
 }
