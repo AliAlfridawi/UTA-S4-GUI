@@ -3,7 +3,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import LayerStackBuilder from '@/components/LayerStackBuilder'
 import SpectraPlot from '@/components/SpectraPlot'
 import PhasePlot from '@/components/PhasePlot'
@@ -14,14 +13,11 @@ import {
   JobInfo,
   SimulationResult,
   runSimulation,
-  startSweep,
-  getSweepResults,
   saveConfig,
   loadConfig,
   listConfigs,
   saveResults,
   checkHealth,
-  connectToProgress,
 } from '@/lib/api'
 import {
   Play,
@@ -41,8 +37,6 @@ export default function HomePage() {
     setConfig,
     result,
     setResult,
-    sweepResults,
-    setSweepResults,
     graphSettings,
     updateGraphSettings,
     layerStackConfig,
@@ -52,7 +46,6 @@ export default function HomePage() {
   
   // UI State (local only)
   const [isRunning, setIsRunning] = useState(false)
-  const [progress, setProgress] = useState<JobInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cpuCount, setCpuCount] = useState<number>(0)
   const [configName, setConfigName] = useState('')
