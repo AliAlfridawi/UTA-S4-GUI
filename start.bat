@@ -82,9 +82,9 @@ if %ERRORLEVEL% neq 0 (
     pip install -r backend\requirements.txt
 )
 
-REM Start backend server in background (with conda activation in subprocess)
+REM Start backend server in background (using helper script to avoid quoting issues)
 echo Starting backend server on http://localhost:8000 ...
-start "S4 Backend" /MIN cmd /c "call "%CONDA_PATH%\Scripts\activate.bat" "%CONDA_PATH%" && call conda activate S4 && cd /d "%PROJECT_DIR%backend" && python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+start "S4 Backend" /MIN cmd /c ""%PROJECT_DIR%start-backend.bat" "%CONDA_PATH%" "%PROJECT_DIR%""
 
 REM Wait a moment for backend to start and get PID
 timeout /t 2 /nobreak >nul
