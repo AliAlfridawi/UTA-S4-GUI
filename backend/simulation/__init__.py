@@ -29,6 +29,10 @@ from .sweep import (
     cancel_job,
     estimate_sweep_time
 )
+from .database import (
+    JobDatabase,
+    get_job_database
+)
 
 __all__ = [
     # Models
@@ -55,5 +59,8 @@ __all__ = [
     "get_job_status",
     "get_job_results",
     "cancel_job",
-    "estimate_sweep_time"
+    "estimate_sweep_time",
+    # Database
+    "JobDatabase",
+    "get_job_database"
 ]

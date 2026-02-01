@@ -30,7 +30,8 @@ from simulation import (
     get_job_status,
     get_job_results,
     cancel_job,
-    estimate_sweep_time
+    estimate_sweep_time,
+    get_job_database
 )
 from utils import (
     save_config,
@@ -41,7 +42,10 @@ from utils import (
     load_results_json,
     list_saved_results,
     get_data_dir,
-    get_configs_dir
+    get_configs_dir,
+    sanitize_filename,
+    validate_path_containment,
+    PathTraversalError
 )
 
 # Create FastAPI app
@@ -89,8 +93,8 @@ async def system_info():
     """Get system information."""
     return {
         "cpu_count": get_cpu_count(),
-        "data_dir": str(get_data_dir()),
-        "configs_dir": str(get_configs_dir())
+        "data_dir": "DATA",
+        "configs_dir": "configs"
     }
 
 
@@ -249,6 +253,114 @@ async def cancel_sweep(job_id: str):
 
 
 # ============================================================================
+# Job History Endpoints (Persistent Storage)
+# ============================================================================
+
+@app.get("/jobs")
+async def list_jobs(
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """
+    List all jobs from persistent storage with optional filtering.
+    """
+    db = get_job_database()
+    status_filter = None
+    if status:
+        try:
+            status_filter = SimulationStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    
+    jobs = db.list_jobs(status=status_filter, limit=limit, offset=offset)
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+@app.get("/jobs/{job_id}")
+async def get_job_details(job_id: str):
+    """
+    Get detailed information about a specific job.
+    """
+    db = get_job_database()
+    job = db.get_job(job_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return job
+
+
+@app.get("/jobs/{job_id}/results")
+async def get_job_results_persistent(job_id: str):
+    """
+    Get results for a completed job from persistent storage.
+    """
+    db = get_job_database()
+    job = db.get_job(job_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.status != SimulationStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Job not completed. Current status: {job.status}"
+        )
+    
+    results = db.get_job_results(job_id)
+    return {"job_id": job_id, "results": results}
+
+
+@app.get("/jobs/{job_id}/config")
+async def get_job_config(job_id: str):
+    """
+    Get the sweep configuration for a job.
+    """
+    db = get_job_database()
+    config = db.get_job_config(job_id)
+    
+    if not config:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return config
+
+
+@app.delete("/jobs/{job_id}")
+async def delete_job(job_id: str):
+    """
+    Delete a job and its results from persistent storage.
+    """
+    db = get_job_database()
+    success = db.delete_job(job_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return {"message": "Job deleted", "job_id": job_id}
+
+
+@app.get("/jobs/resumable")
+async def get_resumable_jobs():
+    """
+    Get jobs that can be resumed (pending or running at last shutdown).
+    """
+    db = get_job_database()
+    jobs = db.get_resumable_jobs()
+    return {"jobs": jobs}
+
+
+@app.post("/jobs/cleanup")
+async def cleanup_old_jobs(days: int = 30):
+    """
+    Delete jobs older than specified days.
+    """
+    db = get_job_database()
+    deleted = db.cleanup_old_jobs(days=days)
+    return {"message": f"Deleted {deleted} old jobs", "deleted_count": deleted}
+
+
+# ============================================================================
 # Configuration Endpoints
 # ============================================================================
 
@@ -278,14 +390,21 @@ async def load_simulation_config(name: str):
     Load a saved simulation configuration.
     """
     try:
+        # Sanitize user-provided name
+        safe_name = sanitize_filename(name)
         configs_dir = get_configs_dir()
-        filepath = configs_dir / f"{name}.json"
+        filepath = configs_dir / f"{safe_name}.json"
         
-        if not filepath.exists():
+        # Validate path containment
+        validated_path = validate_path_containment(filepath, configs_dir)
+        
+        if not validated_path.exists():
             raise HTTPException(status_code=404, detail="Config not found")
         
-        config = load_config(str(filepath))
+        config = load_config(str(validated_path))
         return config
+    except PathTraversalError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -297,14 +416,22 @@ async def delete_config(name: str):
     """
     Delete a saved configuration.
     """
-    configs_dir = get_configs_dir()
-    filepath = configs_dir / f"{name}.json"
-    
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="Config not found")
-    
-    filepath.unlink()
-    return {"message": "Config deleted", "name": name}
+    try:
+        # Sanitize user-provided name
+        safe_name = sanitize_filename(name)
+        configs_dir = get_configs_dir()
+        filepath = configs_dir / f"{safe_name}.json"
+        
+        # Validate path containment
+        validated_path = validate_path_containment(filepath, configs_dir)
+        
+        if not validated_path.exists():
+            raise HTTPException(status_code=404, detail="Config not found")
+        
+        validated_path.unlink()
+        return {"message": "Config deleted", "name": safe_name}
+    except PathTraversalError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ============================================================================
@@ -347,14 +474,21 @@ async def load_simulation_results(name: str):
     Load saved simulation results.
     """
     try:
+        # Sanitize user-provided name
+        safe_name = sanitize_filename(name)
         data_dir = get_data_dir()
-        filepath = data_dir / f"{name}.json"
+        filepath = data_dir / f"{safe_name}.json"
         
-        if not filepath.exists():
+        # Validate path containment
+        validated_path = validate_path_containment(filepath, data_dir)
+        
+        if not validated_path.exists():
             raise HTTPException(status_code=404, detail="Results not found")
         
-        result = load_results_json(str(filepath))
+        result = load_results_json(str(validated_path))
         return result
+    except PathTraversalError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -366,21 +500,29 @@ async def download_results(name: str, format: str = "json"):
     """
     Download results file.
     """
-    data_dir = get_data_dir()
-    
-    if format == "json":
-        filepath = data_dir / f"{name}.json"
-    else:
-        filepath = data_dir / f"{name}.csv"
-    
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    
-    return FileResponse(
-        filepath,
-        filename=filepath.name,
-        media_type="application/octet-stream"
-    )
+    try:
+        # Sanitize user-provided name
+        safe_name = sanitize_filename(name)
+        data_dir = get_data_dir()
+        
+        if format == "json":
+            filepath = data_dir / f"{safe_name}.json"
+        else:
+            filepath = data_dir / f"{safe_name}.csv"
+        
+        # Validate path containment
+        validated_path = validate_path_containment(filepath, data_dir)
+        
+        if not validated_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(
+            validated_path,
+            filename=validated_path.name,
+            media_type="application/octet-stream"
+        )
+    except PathTraversalError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ============================================================================

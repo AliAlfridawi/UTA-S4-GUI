@@ -12,7 +12,10 @@ from .file_io import (
     save_results_csv,
     save_results_json,
     load_results_json,
-    list_saved_results
+    list_saved_results,
+    sanitize_filename,
+    validate_path_containment,
+    PathTraversalError
 )
 
 __all__ = [
@@ -26,5 +29,8 @@ __all__ = [
     "save_results_csv",
     "save_results_json",
     "load_results_json",
-    "list_saved_results"
+    "list_saved_results",
+    "sanitize_filename",
+    "validate_path_containment",
+    "PathTraversalError"
 ]

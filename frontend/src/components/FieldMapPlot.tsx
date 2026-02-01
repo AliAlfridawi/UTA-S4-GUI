@@ -10,6 +10,8 @@ interface FieldMapPlotProps {
   component?: 'Ex' | 'Ey' | 'Ez' | 'magnitude'
   showReal?: boolean
   darkMode?: boolean
+  onComponentChange?: (component: 'Ex' | 'Ey' | 'Ez' | 'magnitude') => void
+  onShowRealChange?: (showReal: boolean) => void
 }
 
 export default function FieldMapPlot({
@@ -17,6 +19,8 @@ export default function FieldMapPlot({
   component = 'Ex',
   showReal = true,
   darkMode = true,
+  onComponentChange,
+  onShowRealChange,
 }: FieldMapPlotProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -194,20 +198,36 @@ export default function FieldMapPlot({
       )}
 
       {/* Component Selection */}
-      <div className="flex items-center justify-center gap-2">
-        {['Ex', 'Ey', 'Ez', 'magnitude'].map((comp) => (
+      <div className="flex items-center justify-center gap-2 flex-wrap">
+        {(['Ex', 'Ey', 'Ez', 'magnitude'] as const).map((comp) => (
           <Button
             key={comp}
             variant={component === comp ? 'default' : 'outline'}
             size="sm"
-            onClick={() => {
-              // This would need to be passed up to parent to change
-              console.log('Select component:', comp)
-            }}
+            onClick={() => onComponentChange?.(comp)}
           >
             {comp === 'magnitude' ? '|E|' : comp}
           </Button>
         ))}
+        
+        <div className="w-px h-6 bg-border mx-2" />
+        
+        <Button
+          variant={showReal ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => onShowRealChange?.(true)}
+          disabled={component === 'magnitude'}
+        >
+          Real
+        </Button>
+        <Button
+          variant={!showReal ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => onShowRealChange?.(false)}
+          disabled={component === 'magnitude'}
+        >
+          Imag
+        </Button>
       </div>
     </div>
   )

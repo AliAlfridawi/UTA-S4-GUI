@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,8 @@ import SimulationForm from '@/components/SimulationForm'
 import SweepConfigComponent from '@/components/SweepConfig'
 import SpectraPlot from '@/components/SpectraPlot'
 import PhasePlot from '@/components/PhasePlot'
+import { toast } from '@/hooks/use-toast'
+import { ValidationResult } from '@/lib/validation'
 import {
   SimulationConfig,
   SweepParameter,
@@ -53,6 +55,17 @@ export default function HomePage() {
   const [configName, setConfigName] = useState('')
   const [savedConfigs, setSavedConfigs] = useState<{ name: string; path: string }[]>([])
   
+  // Validation state
+  const [validation, setValidation] = useState<ValidationResult | null>(null)
+  
+  // Ref for scrolling to results
+  const resultsRef = useRef<HTMLDivElement>(null)
+  
+  // Validation callback
+  const handleValidationChange = useCallback((v: ValidationResult) => {
+    setValidation(v)
+  }, [])
+  
   // Check backend health on mount
   useEffect(() => {
     checkHealth()
@@ -70,8 +83,20 @@ export default function HomePage() {
   // Check if dark mode is enabled
   const isDarkMode = document.documentElement.classList.contains('dark')
 
+  // Auto-scroll to results when available
+  useEffect(() => {
+    if (result && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [result])
+
   // Run single simulation
   const handleRunSimulation = async () => {
+    if (validation && !validation.isValid) {
+      toast.error('Invalid Configuration', 'Please fix the errors before running')
+      return
+    }
+    
     setIsRunning(true)
     setError(null)
     setResult(null)
@@ -79,8 +104,11 @@ export default function HomePage() {
     try {
       const simResult = await runSimulation(config)
       setResult(simResult)
+      toast.success('Simulation Complete', 'Results are ready to view')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Simulation failed')
+      const errorMsg = err instanceof Error ? err.message : 'Simulation failed'
+      setError(errorMsg)
+      toast.error('Simulation Failed', errorMsg)
     } finally {
       setIsRunning(false)
     }
@@ -88,6 +116,11 @@ export default function HomePage() {
 
   // Run parameter sweep
   const handleRunSweep = async () => {
+    if (validation && !validation.isValid) {
+      toast.error('Invalid Configuration', 'Please fix the errors before running')
+      return
+    }
+    
     setIsRunning(true)
     setError(null)
     setSweepResults([])
@@ -100,6 +133,7 @@ export default function HomePage() {
       }
 
       const { job_id } = await startSweep(sweepConfig)
+      toast.info('Sweep Started', `Running ${sweeps.length} parameter sweep`)
 
       // Connect to WebSocket for progress updates
       const ws = connectToProgress(
@@ -111,20 +145,27 @@ export default function HomePage() {
             getSweepResults(job_id).then((data) => {
               setSweepResults(data.results)
               setIsRunning(false)
+              toast.success('Sweep Complete', `${data.results.length} configurations processed`)
             })
           } else if (info.status === 'failed') {
             setError(info.error || 'Sweep failed')
             setIsRunning(false)
+            toast.error('Sweep Failed', info.error || 'An error occurred')
           }
         },
-        () => setError('WebSocket connection failed'),
+        () => {
+          setError('WebSocket connection failed')
+          toast.error('Connection Failed', 'WebSocket connection lost')
+        },
         () => {}
       )
 
       // Cleanup on unmount would go here
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start sweep')
+      const errorMsg = err instanceof Error ? err.message : 'Failed to start sweep'
+      setError(errorMsg)
       setIsRunning(false)
+      toast.error('Failed to Start Sweep', errorMsg)
     }
   }
 
@@ -135,8 +176,11 @@ export default function HomePage() {
       const data = await listConfigs()
       setSavedConfigs(data.configs)
       setConfigName('')
+      toast.success('Configuration Saved', configName || 'Config saved successfully')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save config')
+      const errorMsg = err instanceof Error ? err.message : 'Failed to save config'
+      setError(errorMsg)
+      toast.error('Save Failed', errorMsg)
     }
   }
 
@@ -145,8 +189,11 @@ export default function HomePage() {
     try {
       const loaded = await loadConfig(name)
       setConfig(loaded)
+      toast.success('Configuration Loaded', name)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load config')
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load config'
+      setError(errorMsg)
+      toast.error('Load Failed', errorMsg)
     }
   }
 
@@ -155,8 +202,11 @@ export default function HomePage() {
     if (!result) return
     try {
       await saveResults(result, format)
+      toast.success('Results Saved', `Saved as ${format.toUpperCase()}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save results')
+      const errorMsg = err instanceof Error ? err.message : 'Failed to save results'
+      setError(errorMsg)
+      toast.error('Save Failed', errorMsg)
     }
   }
 
@@ -210,6 +260,7 @@ export default function HomePage() {
             config={config}
             onChange={setConfig}
             disabled={isRunning}
+            onValidationChange={handleValidationChange}
           />
 
           {/* Parameter Sweep */}
@@ -238,7 +289,7 @@ export default function HomePage() {
                   className="w-full"
                   size="lg"
                   onClick={handleRunSimulation}
-                  disabled={isRunning}
+                  disabled={isRunning || (validation !== null && !validation.isValid)}
                 >
                   {isRunning ? (
                     <>
@@ -257,7 +308,7 @@ export default function HomePage() {
                   className="w-full"
                   size="lg"
                   onClick={handleRunSweep}
-                  disabled={isRunning}
+                  disabled={isRunning || (validation !== null && !validation.isValid)}
                 >
                   {isRunning ? (
                     <>
@@ -365,7 +416,7 @@ export default function HomePage() {
 
       {/* Results Visualization */}
       {result && (
-        <Card>
+        <Card ref={resultsRef}>
           <CardHeader>
             <CardTitle>Results</CardTitle>
             <CardDescription>
@@ -392,29 +443,54 @@ export default function HomePage() {
 
       {/* Sweep Results */}
       {sweepResults.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Sweep Results ({sweepResults.length} configurations)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sweepResults.slice(0, 4).map((res, idx) => (
-                <div key={idx} className="border rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    n={res.config.n_silicon}, r={res.config.radius}µm
-                  </p>
-                  <SpectraPlot result={res} darkMode={isDarkMode} />
-                </div>
-              ))}
-            </div>
-            {sweepResults.length > 4 && (
-              <p className="text-center text-muted-foreground mt-4">
-                And {sweepResults.length - 4} more...
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <SweepResultsPanel 
+          sweepResults={sweepResults} 
+          isDarkMode={isDarkMode} 
+        />
       )}
     </div>
+  )
+}
+
+// Separate component for sweep results with expand functionality
+function SweepResultsPanel({ 
+  sweepResults, 
+  isDarkMode 
+}: { 
+  sweepResults: SimulationResult[]
+  isDarkMode: boolean 
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const displayResults = showAll ? sweepResults : sweepResults.slice(0, 4)
+  
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Sweep Results ({sweepResults.length} configurations)</CardTitle>
+          {sweepResults.length > 4 && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowAll(!showAll)}
+            >
+              {showAll ? 'Show Less' : `Show All (${sweepResults.length})`}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {displayResults.map((res, idx) => (
+            <div key={idx} className="border rounded-lg p-4">
+              <p className="text-sm text-muted-foreground mb-2">
+                n={res.config.n_silicon}, r={res.config.radius}µm
+              </p>
+              <SpectraPlot result={res} darkMode={isDarkMode} />
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

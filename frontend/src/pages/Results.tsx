@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import SpectraPlot from '@/components/SpectraPlot'
 import PhasePlot from '@/components/PhasePlot'
+import { toast } from '@/hooks/use-toast'
 import {
   SimulationResult,
   listResults,
   loadResults,
   getDownloadUrl,
+  deleteResults,
 } from '@/lib/api'
 import {
   FolderOpen,
@@ -17,6 +20,8 @@ import {
   FileJson,
   BarChart3,
   RefreshCw,
+  Search,
+  X,
 } from 'lucide-react'
 
 interface SavedResult {
@@ -32,9 +37,15 @@ export default function ResultsPage() {
   const [selectedName, setSelectedName] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Check if dark mode is enabled
   const isDarkMode = document.documentElement.classList.contains('dark')
+
+  // Filter results by search query
+  const filteredResults = savedResults.filter(result => 
+    result.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   // Load saved results list
   const refreshResults = async () => {
@@ -60,8 +71,27 @@ export default function ResultsPage() {
       setSelectedName(name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load result')
+      toast.error('Failed to Load', 'Could not load the selected result')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Delete a result
+  const handleDeleteResult = async (name: string, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent triggering the load action
+    try {
+      await deleteResults(name)
+      await refreshResults()
+      if (selectedName === name) {
+        setSelectedResult(null)
+        setSelectedName('')
+      }
+      toast.success('Deleted', `${name} has been removed`)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to delete result'
+      setError(errorMsg)
+      toast.error('Delete Failed', errorMsg)
     }
   }
 
@@ -112,29 +142,63 @@ export default function ResultsPage() {
                 {savedResults.length} saved simulation{savedResults.length !== 1 ? 's' : ''}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              {/* Search Input */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search results..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-9"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              
               {savedResults.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   No saved results yet. Run a simulation first!
                 </p>
+              ) : filteredResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No results match "{searchQuery}"
+                </p>
               ) : (
                 <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                  {savedResults.map((result) => (
-                    <button
+                  {filteredResults.map((result) => (
+                    <div
                       key={result.name}
                       onClick={() => handleLoadResult(result.name)}
-                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      className={`w-full text-left p-3 rounded-lg border transition-colors cursor-pointer group ${
                         selectedName === result.name
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:bg-accent'
                       }`}
                     >
-                      <p className="font-medium text-sm truncate">{result.name}</p>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
-                        <span>{formatDate(result.modified)}</span>
-                        <span>{formatSize(result.size)}</span>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{result.name}</p>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
+                            <span>{formatDate(result.modified)}</span>
+                            <span>{formatSize(result.size)}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => handleDeleteResult(result.name, e)}
+                          className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+                          title="Delete result"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}

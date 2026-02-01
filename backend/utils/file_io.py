@@ -4,11 +4,82 @@ File I/O utilities for saving/loading configurations and results.
 import json
 import csv
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from ..simulation.models import SimulationConfig, SimulationResult, SweepConfig
+
+
+# Regex pattern for valid filenames: alphanumeric, underscores, hyphens, dots
+SAFE_FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+
+
+class PathTraversalError(Exception):
+    """Raised when a path traversal attempt is detected."""
+    pass
+
+
+def sanitize_filename(name: str) -> str:
+    """
+    Sanitize a filename to prevent path traversal attacks.
+    
+    Args:
+        name: The filename to sanitize
+        
+    Returns:
+        Sanitized filename
+        
+    Raises:
+        PathTraversalError: If the filename contains path traversal attempts
+    """
+    if not name:
+        raise PathTraversalError("Filename cannot be empty")
+    
+    # Remove any file extension for validation (we'll add it back later)
+    base_name = Path(name).stem
+    
+    # Check for path traversal patterns
+    if '..' in name or '/' in name or '\\' in name:
+        raise PathTraversalError(f"Invalid filename: path traversal detected in '{name}'")
+    
+    # Validate against safe pattern
+    if not SAFE_FILENAME_PATTERN.match(base_name):
+        raise PathTraversalError(
+            f"Invalid filename: '{name}' contains invalid characters. "
+            "Only alphanumeric characters, underscores, hyphens, and dots are allowed."
+        )
+    
+    return base_name
+
+
+def validate_path_containment(filepath: Path, allowed_dir: Path) -> Path:
+    """
+    Validate that a resolved filepath stays within the allowed directory.
+    
+    Args:
+        filepath: The path to validate
+        allowed_dir: The directory the path must be contained within
+        
+    Returns:
+        The resolved absolute path
+        
+    Raises:
+        PathTraversalError: If the path escapes the allowed directory
+    """
+    resolved_path = filepath.resolve()
+    allowed_resolved = allowed_dir.resolve()
+    
+    # Check that the resolved path starts with the allowed directory
+    try:
+        resolved_path.relative_to(allowed_resolved)
+    except ValueError:
+        raise PathTraversalError(
+            f"Path traversal detected: '{filepath}' escapes allowed directory"
+        )
+    
+    return resolved_path
 
 
 def get_project_root() -> Path:
@@ -73,14 +144,22 @@ def save_config(config: SimulationConfig, name: Optional[str] = None) -> str:
         
     Returns:
         Path to saved file
+        
+    Raises:
+        PathTraversalError: If the name contains path traversal attempts
     """
     configs_dir = get_configs_dir()
     
     if name is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         name = f"config_{timestamp}"
+    else:
+        # Sanitize user-provided name
+        name = sanitize_filename(name)
     
     filepath = configs_dir / f"{name}.json"
+    # Validate the path stays within configs directory
+    filepath = validate_path_containment(filepath, configs_dir)
     
     with open(filepath, 'w') as f:
         json.dump(config.model_dump(), f, indent=2)
@@ -97,8 +176,17 @@ def load_config(filepath: str) -> SimulationConfig:
         
     Returns:
         SimulationConfig object
+        
+    Raises:
+        PathTraversalError: If the filepath escapes the configs directory
     """
-    with open(filepath, 'r') as f:
+    configs_dir = get_configs_dir()
+    path = Path(filepath)
+    
+    # Validate the path stays within configs directory
+    validated_path = validate_path_containment(path, configs_dir)
+    
+    with open(validated_path, 'r') as f:
         data = json.load(f)
     
     return SimulationConfig(**data)
@@ -226,8 +314,17 @@ def load_results_json(filepath: str) -> SimulationResult:
         
     Returns:
         SimulationResult object
+        
+    Raises:
+        PathTraversalError: If the filepath escapes the data directory
     """
-    with open(filepath, 'r') as f:
+    data_dir = get_data_dir()
+    path = Path(filepath)
+    
+    # Validate the path stays within data directory
+    validated_path = validate_path_containment(path, data_dir)
+    
+    with open(validated_path, 'r') as f:
         data = json.load(f)
     
     return SimulationResult(**data)

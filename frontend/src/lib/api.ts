@@ -269,6 +269,10 @@ export async function loadResults(name: string): Promise<SimulationResult> {
   return fetchJson(`/results/load/${encodeURIComponent(name)}`);
 }
 
+export async function deleteResults(name: string): Promise<{ message: string; name: string }> {
+  return fetchJson(`/results/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
 export function getDownloadUrl(name: string, format: 'json' | 'csv' = 'json'): string {
   return `${API_BASE}/results/download/${encodeURIComponent(name)}?format=${format}`;
 }

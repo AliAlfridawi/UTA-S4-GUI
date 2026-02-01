@@ -33,6 +33,16 @@ A graphical user interface for the Stanford S4 library, designed to accelerate p
 1. Double-click `start.bat`
 2. The browser will open automatically at http://localhost:5173
 
+**To stop**: Double-click `stop.bat` or close the terminal windows.
+
+### Create Desktop Shortcut
+
+For quick access, create a desktop shortcut:
+
+1. Double-click `create-desktop-shortcut.bat`
+2. A shortcut named "S4 Simulation GUI" will appear on your desktop
+3. Double-click the shortcut anytime to launch the application
+
 ### Manual Start
 
 1. **Start the backend**:
@@ -74,7 +84,9 @@ UTA-S4-GUI/
 ├── GRAPHS/                 # Generated plots
 ├── configs/                # Saved simulation configurations
 ├── start.bat               # Windows startup script
-└── stop.bat                # Windows stop script
+├── stop.bat                # Windows stop script
+├── create-desktop-shortcut.bat  # Creates desktop icon
+└── create-shortcut.ps1     # PowerShell shortcut generator
 ```
 
 ## Usage
@@ -110,8 +122,20 @@ Key endpoints:
 - `POST /simulate` - Run single simulation
 - `POST /sweep/start` - Start parameter sweep (async)
 - `GET /sweep/status/{job_id}` - Check sweep progress
+- `GET /jobs` - List all jobs (persistent history)
+- `GET /jobs/{job_id}` - Get job details
+- `GET /jobs/{job_id}/results` - Get results from job history
 - `POST /configs/save` - Save configuration
 - `GET /results` - List saved results
+
+## Job History
+
+Simulation jobs are automatically saved to a local SQLite database (`DATA/jobs.db`), providing:
+
+- **Persistent History**: View all past simulation jobs even after restarting the application
+- **Resume Capability**: Jobs interrupted by shutdown can be identified via `GET /jobs/resumable`
+- **Result Storage**: Access results from any completed job at any time
+- **Cleanup**: Remove old jobs with `POST /jobs/cleanup?days=30`
 
 ## Performance Tips
 
@@ -134,6 +158,14 @@ Key endpoints:
 - Reduce NumBasis for testing
 - Use larger wavelength steps
 - Enable only the outputs you need (T/R/A or fields, not both)
+
+### Port already in use
+- Run `stop.bat` to clean up any lingering processes
+- Or manually kill processes on ports 8000/5173:
+  ```powershell
+  netstat -ano | findstr :8000
+  taskkill /PID <pid> /F
+  ```
 
 ## Contributing
 
