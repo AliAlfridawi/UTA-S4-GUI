@@ -43,6 +43,8 @@ export function convertToAdvancedLayerStack(layerStack: LayerStackConfig): Advan
   
   return {
     lattice_constant: layerStack.latticeConstant,
+    lattice_constant_b: layerStack.latticeConstantB,
+    lattice_type: layerStack.latticeType ?? 'square',
     layers,
     superstrate: layerStack.superstrate,
     substrate: layerStack.substrate,

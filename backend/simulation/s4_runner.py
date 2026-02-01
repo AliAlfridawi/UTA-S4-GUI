@@ -445,7 +445,7 @@ def create_advanced_simulation(
     Create S4 simulation from an advanced LayerStackConfig.
     
     This function processes the full layer stack including:
-    - Global lattice constant
+    - Global lattice constant and type (square, hexagonal, rectangular)
     - Per-layer optical properties (n, k, epsilon)
     - Different hole shapes (circle, rectangle, ellipse)
     - Multiple patterned layers
@@ -462,10 +462,24 @@ def create_advanced_simulation(
     Returns:
         Configured S4 Simulation object
     """
-    a = layer_stack.lattice_constant
+    import math
     
-    # Create simulation with square lattice
-    S = S4.New(Lattice=((a, 0), (0, a)), NumBasis=num_basis)
+    a = layer_stack.lattice_constant
+    b = layer_stack.lattice_constant_b if layer_stack.lattice_constant_b else a
+    lattice_type = layer_stack.lattice_type or "square"
+    
+    # Create lattice based on type
+    if lattice_type == "hexagonal":
+        # Hexagonal lattice: 60° angle between basis vectors
+        lattice = ((a, 0), (a / 2, a * math.sqrt(3) / 2))
+    elif lattice_type == "rectangular":
+        # Rectangular lattice: independent a and b
+        lattice = ((a, 0), (0, b))
+    else:
+        # Square lattice (default)
+        lattice = ((a, 0), (0, a))
+    
+    S = S4.New(Lattice=lattice, NumBasis=num_basis)
     
     # Track materials we've added to avoid duplicates
     added_materials = set()

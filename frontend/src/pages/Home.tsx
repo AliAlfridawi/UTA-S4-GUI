@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import LayerStackBuilder from '@/components/LayerStackBuilder'
+import SimulationSettings from '@/components/SimulationSettings'
 import SpectraPlot from '@/components/SpectraPlot'
 import PhasePlot from '@/components/PhasePlot'
 import { toast } from '@/hooks/use-toast'
@@ -194,6 +195,11 @@ export default function HomePage() {
             config={layerStackConfig}
             onChange={setLayerStackConfig}
             disabled={isRunning}
+          />
+          
+          <SimulationSettings
+            config={config}
+            onConfigChange={setConfig}
           />
         </div>
 

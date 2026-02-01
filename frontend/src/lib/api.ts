@@ -103,6 +103,7 @@ export type MaterialType =
 
 export type HoleShape = 'circle' | 'rectangle' | 'ellipse';
 export type PatternType = 'circle' | 'rectangle' | 'hexagonal';
+export type LatticeType = 'square' | 'hexagonal' | 'rectangular';
 
 export interface LayerDefinitionAPI {
   name: string;
@@ -125,6 +126,8 @@ export interface LayerDefinitionAPI {
 
 export interface AdvancedLayerStack {
   lattice_constant: number;
+  lattice_constant_b?: number;
+  lattice_type: LatticeType;
   layers: LayerDefinitionAPI[];
   superstrate: MaterialType;
   substrate: MaterialType;

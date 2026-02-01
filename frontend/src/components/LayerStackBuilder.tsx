@@ -116,10 +116,15 @@ export interface LayerDefinition {
   order: number
 }
 
+// Lattice type for the periodic structure
+export type LatticeType = 'square' | 'hexagonal' | 'rectangular'
+
 // Layer stack configuration with global lattice constant
 export interface LayerStackConfig {
   // Global simulation parameters
   latticeConstant: number         // a in µm (default 0.5)
+  latticeConstantB?: number       // b in µm (for rectangular lattice, defaults to a)
+  latticeType: LatticeType        // square, hexagonal, or rectangular
   
   layers: LayerDefinition[]
   superstrate: MaterialType
@@ -136,6 +141,7 @@ const PRESETS: Record<string, { name: string; description: string; config: Parti
     description: 'Simple photonic crystal slab on glass',
     config: {
       latticeConstant: 0.5,
+      latticeType: 'square',
       layers: [
         {
           id: 'pcs-1',
@@ -160,6 +166,7 @@ const PRESETS: Record<string, { name: string; description: string; config: Parti
     description: 'PMMA/Graphene/Si-PCS/SiO₂ structure',
     config: {
       latticeConstant: 0.5,
+      latticeType: 'square',
       layers: [
         {
           id: 'pmma-1',
@@ -206,6 +213,7 @@ const PRESETS: Record<string, { name: string; description: string; config: Parti
     description: 'PCS with gold back reflector',
     config: {
       latticeConstant: 0.5,
+      latticeType: 'square',
       layers: [
         {
           id: 'pcs-1',
@@ -837,24 +845,69 @@ export default function LayerStackBuilder({
         )}
 
         {/* Global Parameters */}
-        <div className="flex items-center gap-4 p-3 bg-primary/5 rounded-lg border">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium">Lattice Constant (a):</label>
-            <Input
-              type="number"
-              value={config.latticeConstant ?? 0.5}
-              onChange={(e) =>
-                onChange({ ...config, latticeConstant: parseFloat(e.target.value) || 0.5 })
-              }
-              className="w-24 h-8"
-              step="0.01"
-              min="0.01"
-              disabled={disabled}
-            />
-            <span className="text-xs text-muted-foreground">µm</span>
+        <div className="p-3 bg-primary/5 rounded-lg border space-y-3">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Lattice Type */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">Lattice:</label>
+              <Select
+                value={config.latticeType ?? 'square'}
+                onValueChange={(v) => onChange({ ...config, latticeType: v as LatticeType })}
+                disabled={disabled}
+              >
+                <SelectTrigger className="w-32 h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="square">Square</SelectItem>
+                  <SelectItem value="hexagonal">Hexagonal</SelectItem>
+                  <SelectItem value="rectangular">Rectangular</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Lattice Constant a */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">a:</label>
+              <Input
+                type="number"
+                value={config.latticeConstant ?? 0.5}
+                onChange={(e) =>
+                  onChange({ ...config, latticeConstant: parseFloat(e.target.value) || 0.5 })
+                }
+                className="w-20 h-8"
+                step="any"
+                min="0.01"
+                disabled={disabled}
+              />
+              <span className="text-xs text-muted-foreground">µm</span>
+            </div>
+
+            {/* Lattice Constant b (only for rectangular) */}
+            {config.latticeType === 'rectangular' && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">b:</label>
+                <Input
+                  type="number"
+                  value={config.latticeConstantB ?? config.latticeConstant ?? 0.5}
+                  onChange={(e) =>
+                    onChange({ ...config, latticeConstantB: parseFloat(e.target.value) || 0.5 })
+                  }
+                  className="w-20 h-8"
+                  step="any"
+                  min="0.01"
+                  disabled={disabled}
+                />
+                <span className="text-xs text-muted-foreground">µm</span>
+              </div>
+            )}
           </div>
-          <span className="text-xs text-muted-foreground ml-auto">
-            Global lattice constant for periodic structure
+          <span className="text-xs text-muted-foreground block">
+            {config.latticeType === 'hexagonal' 
+              ? 'Hexagonal lattice: 60° angle between basis vectors'
+              : config.latticeType === 'rectangular'
+              ? 'Rectangular lattice: independent a and b lattice constants'
+              : 'Square lattice: a = b with 90° angle'}
           </span>
         </div>
 
@@ -993,6 +1046,7 @@ export default function LayerStackBuilder({
 // Default config export
 export const defaultLayerStackConfig: LayerStackConfig = {
   latticeConstant: 0.5,
+  latticeType: 'square',
   layers: [],
   superstrate: 'Vacuum',
   substrate: 'Glass',

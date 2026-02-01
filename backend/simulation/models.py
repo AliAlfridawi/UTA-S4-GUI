@@ -244,11 +244,20 @@ class AdvancedLayerStack(BaseModel):
     Complete layer stack configuration for advanced simulations.
     Supports structures like: PMMA → Graphene → Si-PCS → Glass → Gold reflector
     """
-    # Global lattice parameter
+    # Global lattice parameters
     lattice_constant: float = Field(
         default=0.5,
         gt=0,
         description="Lattice constant (a) in µm"
+    )
+    lattice_constant_b: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="Second lattice constant (b) in µm for rectangular lattice"
+    )
+    lattice_type: Literal["square", "hexagonal", "rectangular"] = Field(
+        default="square",
+        description="Type of lattice: square, hexagonal, or rectangular"
     )
     
     layers: List[LayerDefinition] = Field(

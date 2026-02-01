@@ -5,6 +5,7 @@ import type { LayerStackConfig } from '@/components/LayerStackBuilder'
 // Default layer stack config
 const defaultLayerStackConfig: LayerStackConfig = {
   latticeConstant: 0.5,
+  latticeType: 'square',
   layers: [],
   superstrate: 'Vacuum',
   substrate: 'Glass',
