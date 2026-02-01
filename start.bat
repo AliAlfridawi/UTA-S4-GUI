@@ -11,21 +11,65 @@ set "PID_FILE=%PROJECT_DIR%\.pids"
 REM Clean up old PID file
 if exist "%PID_FILE%" del "%PID_FILE%"
 
-REM Check if conda is available
-where conda >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: Conda is not installed or not in PATH
-    echo Please install Anaconda/Miniconda first
-    pause
-    exit /b 1
+REM ========================================
+REM Find Anaconda/Miniconda with S4 environment
+REM ========================================
+set "CONDA_PATH="
+
+REM Check each installation for the S4 environment (first match wins)
+if exist "%USERPROFILE%\miniconda3\envs\S4" (
+    set "CONDA_PATH=%USERPROFILE%\miniconda3"
+    goto :found_conda
 )
+if exist "%USERPROFILE%\anaconda3\envs\S4" (
+    set "CONDA_PATH=%USERPROFILE%\anaconda3"
+    goto :found_conda
+)
+if exist "%LOCALAPPDATA%\miniconda3\envs\S4" (
+    set "CONDA_PATH=%LOCALAPPDATA%\miniconda3"
+    goto :found_conda
+)
+if exist "%LOCALAPPDATA%\anaconda3\envs\S4" (
+    set "CONDA_PATH=%LOCALAPPDATA%\anaconda3"
+    goto :found_conda
+)
+if exist "C:\ProgramData\miniconda3\envs\S4" (
+    set "CONDA_PATH=C:\ProgramData\miniconda3"
+    goto :found_conda
+)
+if exist "C:\ProgramData\anaconda3\envs\S4" (
+    set "CONDA_PATH=C:\ProgramData\anaconda3"
+    goto :found_conda
+)
+
+REM S4 environment not found in any installation
+echo ERROR: S4 conda environment not found in any Anaconda/Miniconda installation
+echo.
+echo Searched in:
+echo   - %USERPROFILE%\miniconda3\envs\S4
+echo   - %USERPROFILE%\anaconda3\envs\S4
+echo   - %LOCALAPPDATA%\miniconda3\envs\S4
+echo   - %LOCALAPPDATA%\anaconda3\envs\S4
+echo   - C:\ProgramData\miniconda3\envs\S4
+echo   - C:\ProgramData\anaconda3\envs\S4
+echo.
+echo Please create the S4 environment in Anaconda Prompt
+pause
+exit /b 1
+
+:found_conda
+echo Found conda at: %CONDA_PATH%
+echo Found S4 environment at: %CONDA_PATH%\envs\S4
+
+REM Initialize conda for this session
+echo Initializing conda...
+call "%CONDA_PATH%\Scripts\activate.bat" "%CONDA_PATH%"
 
 REM Activate S4 environment
 echo Activating S4 conda environment...
 call conda activate S4
 if %ERRORLEVEL% neq 0 (
     echo ERROR: Failed to activate S4 environment
-    echo Make sure you have created the S4 environment with: conda create -n S4
     pause
     exit /b 1
 )
@@ -38,9 +82,9 @@ if %ERRORLEVEL% neq 0 (
     pip install -r backend\requirements.txt
 )
 
-REM Start backend server in background and capture PID
+REM Start backend server in background (with conda activation in subprocess)
 echo Starting backend server on http://localhost:8000 ...
-start "S4 Backend" /MIN cmd /c "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+start "S4 Backend" /MIN cmd /c "call "%CONDA_PATH%\Scripts\activate.bat" "%CONDA_PATH%" && call conda activate S4 && cd /d "%PROJECT_DIR%backend" && python -m uvicorn main:app --host 0.0.0.0 --port 8000"
 
 REM Wait a moment for backend to start and get PID
 timeout /t 2 /nobreak >nul
