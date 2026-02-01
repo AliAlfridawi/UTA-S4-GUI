@@ -11,13 +11,20 @@ from .models import (
     JobInfo,
     SimulationStatus,
     ExcitationConfig,
-    WavelengthRange
+    WavelengthRange,
+    AdvancedLayerStack,
+    LayerDefinition,
+    MaterialType,
+    MATERIAL_DATABASE
 )
 from .s4_runner import (
     run_simulation,
     create_s4_simulation,
     compute_field_map,
-    get_cpu_count
+    get_cpu_count,
+    create_advanced_simulation,
+    run_advanced_simulation,
+    get_material_epsilon
 )
 from .sweep import (
     run_sweep,
@@ -46,11 +53,18 @@ __all__ = [
     "SimulationStatus",
     "ExcitationConfig",
     "WavelengthRange",
+    "AdvancedLayerStack",
+    "LayerDefinition",
+    "MaterialType",
+    "MATERIAL_DATABASE",
     # Runners
     "run_simulation",
     "create_s4_simulation",
     "compute_field_map",
     "get_cpu_count",
+    "create_advanced_simulation",
+    "run_advanced_simulation",
+    "get_material_epsilon",
     # Sweep
     "run_sweep",
     "generate_sweep_configs",

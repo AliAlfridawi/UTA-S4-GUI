@@ -13,7 +13,11 @@ from .models import (
     SimulationConfig, 
     SimulationResult, 
     FieldMapResult,
-    WavelengthRange
+    WavelengthRange,
+    AdvancedLayerStack,
+    LayerDefinition,
+    MaterialType,
+    MATERIAL_DATABASE,
 )
 
 
@@ -401,3 +405,299 @@ def compute_field_map(
         Ez_real=Ez_real,
         Ez_imag=Ez_imag
     )
+
+
+def get_material_epsilon(material: MaterialType, n_override: float = None, k_override: float = None) -> complex:
+    """
+    Get complex permittivity for a material.
+    
+    Args:
+        material: MaterialType enum value
+        n_override: Optional refractive index override
+        k_override: Optional extinction coefficient override
+        
+    Returns:
+        Complex permittivity
+    """
+    mat_data = MATERIAL_DATABASE.get(material, {})
+    
+    # Check for Drude model materials (like Gold)
+    if "drude" in mat_data and n_override is None:
+        # For Drude materials, return a placeholder - actual value computed per-wavelength
+        return complex(-100, 10)  # Typical metallic value
+    
+    n = n_override if n_override is not None else mat_data.get("n", 1.0)
+    k = k_override if k_override is not None else mat_data.get("k", 0.0)
+    
+    # ε = (n + ik)² = n² - k² + 2nki
+    return complex(n**2 - k**2, 2 * n * k)
+
+
+def create_advanced_simulation(
+    layer_stack: AdvancedLayerStack,
+    excitation_theta: float = 0,
+    excitation_phi: float = 0,
+    s_amplitude: float = 0,
+    p_amplitude: float = 1,
+    num_basis: int = 100
+) -> "S4.Simulation":
+    """
+    Create S4 simulation from an advanced LayerStackConfig.
+    
+    This function processes the full layer stack including:
+    - Global lattice constant
+    - Per-layer optical properties (n, k, epsilon)
+    - Different hole shapes (circle, rectangle, ellipse)
+    - Multiple patterned layers
+    - Back reflector configuration
+    
+    Args:
+        layer_stack: Complete layer stack configuration
+        excitation_theta: Polar angle in degrees
+        excitation_phi: Azimuthal angle in degrees
+        s_amplitude: s-polarization amplitude
+        p_amplitude: p-polarization amplitude
+        num_basis: Number of Fourier basis terms
+        
+    Returns:
+        Configured S4 Simulation object
+    """
+    a = layer_stack.lattice_constant
+    
+    # Create simulation with square lattice
+    S = S4.New(Lattice=((a, 0), (0, a)), NumBasis=num_basis)
+    
+    # Track materials we've added to avoid duplicates
+    added_materials = set()
+    
+    def add_material_if_needed(name: str, epsilon: complex):
+        """Helper to add material only once."""
+        if name not in added_materials:
+            S.AddMaterial(Name=name, Epsilon=epsilon)
+            added_materials.add(name)
+    
+    # Always add vacuum
+    add_material_if_needed("Vacuum", complex(1.0, 0))
+    
+    # Add superstrate material
+    superstrate_eps = get_material_epsilon(layer_stack.superstrate)
+    superstrate_name = layer_stack.superstrate.value
+    add_material_if_needed(superstrate_name, superstrate_eps)
+    
+    # Add substrate material
+    substrate_eps = get_material_epsilon(layer_stack.substrate)
+    substrate_name = layer_stack.substrate.value
+    add_material_if_needed(substrate_name, substrate_eps)
+    
+    # Add back reflector material if needed
+    if layer_stack.include_back_reflector:
+        reflector_eps = get_material_epsilon(layer_stack.back_reflector_material)
+        reflector_name = layer_stack.back_reflector_material.value
+        add_material_if_needed(reflector_name, reflector_eps)
+    
+    # Process layers and add their materials
+    ordered_layers = layer_stack.get_ordered_layers()
+    
+    for layer in ordered_layers:
+        # Get layer material epsilon (with possible overrides)
+        layer_eps = layer.get_epsilon()
+        layer_mat_name = f"{layer.name}_mat"
+        add_material_if_needed(layer_mat_name, layer_eps)
+        
+        # If layer has pattern, add pattern material
+        if layer.has_pattern and layer.pattern_material:
+            pattern_eps = get_material_epsilon(layer.pattern_material)
+            pattern_mat_name = layer.pattern_material.value
+            add_material_if_needed(pattern_mat_name, pattern_eps)
+    
+    # Build layer stack: Superstrate (semi-infinite) -> Layers -> Substrate
+    S.AddLayer(Name='Superstrate', Thickness=0.0, Material=superstrate_name)
+    
+    # Add each layer in order
+    for i, layer in enumerate(ordered_layers):
+        layer_name = f"Layer_{i}_{layer.name}"
+        layer_mat_name = f"{layer.name}_mat"
+        
+        S.AddLayer(Name=layer_name, Thickness=layer.thickness, Material=layer_mat_name)
+        
+        # Add pattern if present
+        if layer.has_pattern and layer.pattern_material:
+            pattern_mat_name = layer.pattern_material.value
+            hole_shape = layer.hole_shape or "circle"
+            
+            if hole_shape == "circle":
+                radius = layer.pattern_radius or 0.15
+                S.SetRegionCircle(
+                    Layer=layer_name,
+                    Material=pattern_mat_name,
+                    Center=(0, 0),
+                    Radius=radius
+                )
+            elif hole_shape == "rectangle":
+                # For rectangles, use SetRegionRectangle
+                width = layer.pattern_width or 0.2
+                height = layer.pattern_height or 0.2
+                S.SetRegionRectangle(
+                    Layer=layer_name,
+                    Material=pattern_mat_name,
+                    Center=(0, 0),
+                    Angle=0,
+                    Halfwidths=(width / 2, height / 2)
+                )
+            elif hole_shape == "ellipse":
+                # S4 uses SetRegionEllipse for ellipses
+                semi_major = layer.pattern_width or 0.15
+                semi_minor = layer.pattern_height or 0.1
+                S.SetRegionEllipse(
+                    Layer=layer_name,
+                    Material=pattern_mat_name,
+                    Center=(0, 0),
+                    Angle=0,
+                    Halfwidths=(semi_major, semi_minor)
+                )
+    
+    # Add substrate layer
+    S.AddLayer(Name='Substrate', Thickness=3.0, Material=substrate_name)
+    
+    # Add back reflector if configured
+    if layer_stack.include_back_reflector:
+        reflector_name = layer_stack.back_reflector_material.value
+        S.AddLayer(
+            Name='BackReflector',
+            Thickness=layer_stack.back_reflector_thickness,
+            Material=reflector_name
+        )
+        # Add final semi-infinite layer below reflector
+        S.AddLayer(Name='Below', Thickness=0.0, Material=substrate_name)
+    
+    # Set excitation
+    S.SetExcitationPlanewave(
+        IncidenceAngles=(excitation_theta, excitation_phi),
+        sAmplitude=complex(s_amplitude, 0),
+        pAmplitude=complex(p_amplitude, 0),
+        Order=0
+    )
+    
+    return S
+
+
+def run_advanced_simulation(
+    layer_stack: AdvancedLayerStack,
+    wavelength_range: WavelengthRange,
+    excitation_theta: float = 0,
+    excitation_phi: float = 0,
+    s_amplitude: float = 0,
+    p_amplitude: float = 1,
+    num_basis: int = 100,
+    compute_power: bool = True,
+    compute_fields: bool = True,
+    progress_callback: Optional[callable] = None,
+    num_workers: Optional[int] = None
+) -> SimulationResult:
+    """
+    Run simulation with advanced layer stack configuration.
+    
+    Args:
+        layer_stack: Complete layer stack configuration
+        wavelength_range: Wavelength sweep range
+        excitation_theta: Polar angle in degrees
+        excitation_phi: Azimuthal angle in degrees
+        s_amplitude: s-polarization amplitude
+        p_amplitude: p-polarization amplitude
+        num_basis: Number of Fourier basis terms
+        compute_power: Whether to compute T/R/A
+        compute_fields: Whether to compute E-fields
+        progress_callback: Optional progress callback
+        num_workers: Number of parallel workers
+        
+    Returns:
+        SimulationResult with computed spectra
+    """
+    if num_workers is None:
+        num_workers = get_cpu_count()
+    
+    wavelengths = np.linspace(
+        wavelength_range.start,
+        wavelength_range.end,
+        wavelength_range.num_points
+    )
+    
+    # Create the simulation
+    S = create_advanced_simulation(
+        layer_stack,
+        excitation_theta=excitation_theta,
+        excitation_phi=excitation_phi,
+        s_amplitude=s_amplitude,
+        p_amplitude=p_amplitude,
+        num_basis=num_basis
+    )
+    
+    # Run wavelength sweep
+    all_results = []
+    total = len(wavelengths)
+    
+    for i, wvl in enumerate(wavelengths):
+        freq = 1000.0 / wvl
+        S.SetFrequency(freq)
+        
+        result = {"wavelength": wvl}
+        
+        if compute_power:
+            _, back_flux = S.GetPowerFlux("Superstrate", 0)
+            forward_flux, _ = S.GetPowerFlux("Substrate", 0)
+            
+            R = abs(back_flux)
+            T = abs(forward_flux)
+            A = max(0, 1 - T - R)  # Clamp to avoid small negatives
+            
+            result["T"] = T
+            result["R"] = R
+            result["A"] = A
+        
+        if compute_fields:
+            # Get fields at midpoint of structure for phase
+            total_thickness = sum(l.thickness for l in layer_stack.layers)
+            z_mid = total_thickness / 2
+            
+            tE, _ = S.GetFields(0, 0, z_mid + 10)
+            rE, _ = S.GetFields(0, 0, -10)
+            
+            result["tE"] = tE[0]
+            result["rE"] = rE[0]
+        
+        all_results.append(result)
+        
+        if progress_callback:
+            progress_callback(i + 1, total)
+    
+    # Build result object
+    # Create a minimal SimulationConfig for compatibility
+    config = SimulationConfig(
+        lattice_constant=layer_stack.lattice_constant,
+        thickness=sum(l.thickness for l in layer_stack.layers if l.has_pattern) or 0.16,
+        radius=next((l.pattern_radius for l in layer_stack.layers if l.pattern_radius), 0.15),
+        wavelength=wavelength_range
+    )
+    
+    sim_result = SimulationResult(
+        wavelengths=[r["wavelength"] for r in all_results],
+        config=config
+    )
+    
+    if compute_power:
+        sim_result.transmittance = [r["T"] for r in all_results]
+        sim_result.reflectance = [r["R"] for r in all_results]
+        sim_result.absorptance = [r["A"] for r in all_results]
+    
+    if compute_fields:
+        sim_result.transmission_phase = [
+            float(np.angle(r.get("tE", complex(1, 0))) / np.pi)
+            for r in all_results
+        ]
+        sim_result.reflection_phase = [
+            float(np.angle(r.get("rE", complex(1, 0))) / np.pi)
+            for r in all_results
+        ]
+    
+    return sim_result
+

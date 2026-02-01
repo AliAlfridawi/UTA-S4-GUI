@@ -89,6 +89,62 @@ export interface SavedConfig {
   size: number;
 }
 
+// Advanced Layer Stack types (matching backend)
+export type MaterialType =
+  | 'Vacuum'
+  | 'Silicon'
+  | 'Glass'
+  | 'Gold'
+  | 'PMMA'
+  | 'Graphene'
+  | 'GaAs'
+  | 'SiliconSubstrate'
+  | 'Custom';
+
+export type HoleShape = 'circle' | 'rectangle' | 'ellipse';
+export type PatternType = 'circle' | 'rectangle' | 'hexagonal';
+
+export interface LayerDefinitionAPI {
+  name: string;
+  material: MaterialType;
+  thickness: number;
+  n?: number;
+  k?: number;
+  epsilon_real?: number;
+  epsilon_imag?: number;
+  has_pattern: boolean;
+  pattern_type?: PatternType;
+  hole_shape?: HoleShape;
+  pattern_material?: MaterialType;
+  pattern_radius?: number;
+  pattern_width?: number;
+  pattern_height?: number;
+  pattern_fill_factor?: number;
+  order: number;
+}
+
+export interface AdvancedLayerStack {
+  lattice_constant: number;
+  layers: LayerDefinitionAPI[];
+  superstrate: MaterialType;
+  substrate: MaterialType;
+  include_back_reflector: boolean;
+  back_reflector_material: MaterialType;
+  back_reflector_thickness: number;
+}
+
+export interface AdvancedSimulationRequest {
+  layer_stack: AdvancedLayerStack;
+  wavelength: WavelengthRange;
+  excitation_theta?: number;
+  excitation_phi?: number;
+  s_amplitude?: number;
+  p_amplitude?: number;
+  num_basis?: number;
+  compute_power?: boolean;
+  compute_fields?: boolean;
+}
+
 // Default configuration
 export const defaultConfig: SimulationConfig = {
   lattice_constant: 0.5,
@@ -150,6 +206,13 @@ export async function runSimulation(config: SimulationConfig): Promise<Simulatio
   return fetchJson('/simulate', {
     method: 'POST',
     body: JSON.stringify(config),
+  });
+}
+
+export async function runAdvancedSimulation(request: AdvancedSimulationRequest): Promise<SimulationResult> {
+  return fetchJson('/simulate/advanced', {
+    method: 'POST',
+    body: JSON.stringify(request),
   });
 }
 

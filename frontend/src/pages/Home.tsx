@@ -2,17 +2,15 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import LayerStackBuilder from '@/components/LayerStackBuilder'
 import SpectraPlot from '@/components/SpectraPlot'
 import PhasePlot from '@/components/PhasePlot'
 import { toast } from '@/hooks/use-toast'
 import { useSimulation } from '@/context/SimulationContext'
-import { convertLayerStackToSimConfig } from '@/lib/utils'
+import { createAdvancedSimRequest, convertLayerStackToSimConfig } from '@/lib/utils'
 import {
-  JobInfo,
-  SimulationResult,
-  runSimulation,
+  runAdvancedSimulation,
   saveConfig,
   loadConfig,
   listConfigs,
@@ -80,15 +78,25 @@ export default function HomePage() {
 
   // Run single simulation
   const handleRunSimulation = async () => {
-    // Convert layer stack to sim config for API
-    const activeConfig = convertLayerStackToSimConfig(layerStackConfig, config)
+    // Create advanced simulation request from layer stack
+    const simRequest = createAdvancedSimRequest(
+      layerStackConfig,
+      config.wavelength,
+      {
+        theta: config.excitation.theta,
+        phi: config.excitation.phi,
+        s_amplitude: config.excitation.s_amplitude,
+        p_amplitude: config.excitation.p_amplitude,
+        num_basis: config.num_basis,
+      }
+    )
     
     setIsRunning(true)
     setError(null)
     setResult(null)
 
     try {
-      const simResult = await runSimulation(activeConfig)
+      const simResult = await runAdvancedSimulation(simRequest)
       setResult(simResult)
       toast.success('Simulation Complete', 'Results are ready to view')
     } catch (err) {
@@ -218,22 +226,6 @@ export default function HomePage() {
                   </>
                 )}
               </Button>
-
-              {/* Progress */}
-              {progress && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>{progress.progress?.message}</span>
-                    <span>{progress.progress?.percent.toFixed(1)}%</span>
-                  </div>
-                  <Progress value={progress.progress?.percent || 0} />
-                  {progress.progress?.estimated_remaining_seconds && (
-                    <p className="text-xs text-muted-foreground">
-                      Est. remaining: {Math.ceil(progress.progress.estimated_remaining_seconds)}s
-                    </p>
-                  )}
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -374,57 +366,6 @@ export default function HomePage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Sweep Results */}
-      {sweepResults.length > 0 && (
-        <SweepResultsPanel 
-          sweepResults={sweepResults} 
-          isDarkMode={isDarkMode} 
-        />
-      )}
     </div>
-  )
-}
-
-// Separate component for sweep results with expand functionality
-function SweepResultsPanel({ 
-  sweepResults, 
-  isDarkMode 
-}: { 
-  sweepResults: SimulationResult[]
-  isDarkMode: boolean 
-}) {
-  const [showAll, setShowAll] = useState(false)
-  const displayResults = showAll ? sweepResults : sweepResults.slice(0, 4)
-  
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>Sweep Results ({sweepResults.length} configurations)</CardTitle>
-          {sweepResults.length > 4 && (
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => setShowAll(!showAll)}
-            >
-              {showAll ? 'Show Less' : `Show All (${sweepResults.length})`}
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {displayResults.map((res, idx) => (
-            <div key={idx} className="border rounded-lg p-4">
-              <p className="text-sm text-muted-foreground mb-2">
-                n={res.config.n_silicon}, r={res.config.radius}µm
-              </p>
-              <SpectraPlot result={res} darkMode={isDarkMode} compact />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
   )
 }

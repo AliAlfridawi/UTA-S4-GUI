@@ -143,11 +143,34 @@ class LayerDefinition(BaseModel):
     material: MaterialType = Field(description="Material type")
     thickness: float = Field(ge=0, description="Layer thickness in µm")
     
+    # Optical properties - n, k can override material defaults
+    n: Optional[float] = Field(
+        default=None,
+        description="Refractive index override"
+    )
+    k: Optional[float] = Field(
+        default=None,
+        description="Extinction coefficient override"
+    )
+    # Epsilon overrides (computed from n,k if not set directly)
+    epsilon_real: Optional[float] = Field(
+        default=None,
+        description="Real part of permittivity override"
+    )
+    epsilon_imag: Optional[float] = Field(
+        default=None,
+        description="Imaginary part of permittivity override"
+    )
+    
     # Pattern options
     has_pattern: bool = Field(default=False, description="Whether layer has patterning")
     pattern_type: Optional[Literal["circle", "rectangle", "hexagonal"]] = Field(
         default="circle",
-        description="Type of pattern"
+        description="Type of pattern lattice arrangement"
+    )
+    hole_shape: Optional[Literal["circle", "rectangle", "ellipse"]] = Field(
+        default="circle",
+        description="Shape of holes in the pattern"
     )
     pattern_material: Optional[MaterialType] = Field(
         default=None,
@@ -157,6 +180,14 @@ class LayerDefinition(BaseModel):
         default=None,
         description="Pattern radius in µm (for circles)"
     )
+    pattern_width: Optional[float] = Field(
+        default=None,
+        description="Pattern width in µm (for rectangles)"
+    )
+    pattern_height: Optional[float] = Field(
+        default=None,
+        description="Pattern height in µm (for rectangles)"
+    )
     pattern_fill_factor: Optional[float] = Field(
         default=None,
         ge=0,
@@ -164,18 +195,48 @@ class LayerDefinition(BaseModel):
         description="Fill factor for pattern (0-1)"
     )
     
-    # Custom material overrides
+    # Legacy custom overrides (kept for backward compatibility)
     custom_n: Optional[float] = Field(
         default=None,
-        description="Custom refractive index (overrides material default)"
+        description="Deprecated: Use 'n' instead"
     )
     custom_k: Optional[float] = Field(
         default=None,
-        description="Custom extinction coefficient (overrides material default)"
+        description="Deprecated: Use 'k' instead"
     )
     
     # Ordering for drag-and-drop
     order: int = Field(default=0, description="Layer order in stack (0 = top)")
+    
+    def get_effective_n(self) -> float:
+        """Get effective refractive index (override or material default)."""
+        if self.n is not None:
+            return self.n
+        if self.custom_n is not None:
+            return self.custom_n
+        # Fall back to material database
+        mat_data = MATERIAL_DATABASE.get(self.material, {})
+        return mat_data.get("n", 1.0)
+    
+    def get_effective_k(self) -> float:
+        """Get effective extinction coefficient (override or material default)."""
+        if self.k is not None:
+            return self.k
+        if self.custom_k is not None:
+            return self.custom_k
+        # Fall back to material database
+        mat_data = MATERIAL_DATABASE.get(self.material, {})
+        return mat_data.get("k", 0.0)
+    
+    def get_epsilon(self) -> complex:
+        """Get complex permittivity for this layer."""
+        if self.epsilon_real is not None:
+            imag = self.epsilon_imag if self.epsilon_imag is not None else 0.0
+            return complex(self.epsilon_real, imag)
+        # Compute from n and k: ε = (n + ik)² = n² - k² + 2nki
+        n = self.get_effective_n()
+        k = self.get_effective_k()
+        return complex(n**2 - k**2, 2 * n * k)
 
 
 class AdvancedLayerStack(BaseModel):
@@ -183,6 +244,13 @@ class AdvancedLayerStack(BaseModel):
     Complete layer stack configuration for advanced simulations.
     Supports structures like: PMMA → Graphene → Si-PCS → Glass → Gold reflector
     """
+    # Global lattice parameter
+    lattice_constant: float = Field(
+        default=0.5,
+        gt=0,
+        description="Lattice constant (a) in µm"
+    )
+    
     layers: List[LayerDefinition] = Field(
         default_factory=list,
         description="Ordered list of layers (top to bottom)"

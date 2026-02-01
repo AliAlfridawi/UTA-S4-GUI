@@ -31,7 +31,10 @@ from simulation import (
     get_job_results,
     cancel_job,
     estimate_sweep_time,
-    get_job_database
+    get_job_database,
+    AdvancedLayerStack,
+    WavelengthRange,
+    run_advanced_simulation
 )
 from utils import (
     save_config,
@@ -114,6 +117,53 @@ async def run_single_simulation(config: SimulationConfig):
         result = run_simulation(config)
         return result
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+from pydantic import BaseModel
+
+
+class AdvancedSimulationRequest(BaseModel):
+    """Request body for advanced layer stack simulation."""
+    layer_stack: AdvancedLayerStack
+    wavelength: WavelengthRange = WavelengthRange()
+    excitation_theta: float = 0
+    excitation_phi: float = 0
+    s_amplitude: float = 0
+    p_amplitude: float = 1
+    num_basis: int = 100
+    compute_power: bool = True
+    compute_fields: bool = True
+
+
+@app.post("/simulate/advanced", response_model=SimulationResult)
+async def run_advanced_sim(request: AdvancedSimulationRequest):
+    """
+    Run an advanced simulation with full layer stack configuration.
+    
+    This endpoint accepts the complete LayerStackConfig from the frontend,
+    supporting:
+    - Multiple layers with custom n/k/epsilon values
+    - Different hole shapes (circle, rectangle, ellipse)
+    - Global lattice constant
+    - Back reflector configuration
+    """
+    try:
+        result = run_advanced_simulation(
+            layer_stack=request.layer_stack,
+            wavelength_range=request.wavelength,
+            excitation_theta=request.excitation_theta,
+            excitation_phi=request.excitation_phi,
+            s_amplitude=request.s_amplitude,
+            p_amplitude=request.p_amplitude,
+            num_basis=request.num_basis,
+            compute_power=request.compute_power,
+            compute_fields=request.compute_fields
+        )
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
