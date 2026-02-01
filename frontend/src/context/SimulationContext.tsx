@@ -1,5 +1,19 @@
 import { createContext, useContext, useState, ReactNode, useCallback } from 'react'
 import { SimulationConfig, SimulationResult, SweepParameter, defaultConfig } from '@/lib/api'
+import type { LayerStackConfig } from '@/components/LayerStackBuilder'
+
+// Input mode type
+export type InputMode = 'simple' | 'advanced'
+
+// Default layer stack config
+const defaultLayerStackConfig: LayerStackConfig = {
+  layers: [],
+  superstrate: 'Vacuum',
+  substrate: 'Glass',
+  includeBackReflector: false,
+  backReflectorMaterial: 'Gold',
+  backReflectorThickness: 0.1,
+}
 
 // Session storage keys
 const STORAGE_KEYS = {
@@ -8,6 +22,8 @@ const STORAGE_KEYS = {
   SWEEP_RESULTS: 'simulation_sweep_results',
   SWEEPS: 'simulation_sweeps',
   GRAPH_SETTINGS: 'graph_settings',
+  INPUT_MODE: 'input_mode',
+  LAYER_STACK_CONFIG: 'layer_stack_config',
 }
 
 // Graph customization settings
@@ -51,6 +67,8 @@ interface SimulationState {
   sweepResults: SimulationResult[]
   sweeps: SweepParameter[]
   graphSettings: GraphSettings
+  inputMode: InputMode
+  layerStackConfig: LayerStackConfig
   
   // Actions
   setConfig: (config: SimulationConfig) => void
@@ -59,6 +77,8 @@ interface SimulationState {
   setSweeps: (sweeps: SweepParameter[]) => void
   setGraphSettings: (settings: GraphSettings) => void
   updateGraphSettings: (partial: Partial<GraphSettings>) => void
+  setInputMode: (mode: InputMode) => void
+  setLayerStackConfig: (config: LayerStackConfig) => void
   clearResults: () => void
   resetAll: () => void
 }
@@ -104,6 +124,12 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [graphSettings, setGraphSettingsState] = useState<GraphSettings>(() =>
     loadFromStorage(STORAGE_KEYS.GRAPH_SETTINGS, defaultGraphSettings)
   )
+  const [inputMode, setInputModeState] = useState<InputMode>(() =>
+    loadFromStorage(STORAGE_KEYS.INPUT_MODE, 'simple')
+  )
+  const [layerStackConfig, setLayerStackConfigState] = useState<LayerStackConfig>(() =>
+    loadFromStorage(STORAGE_KEYS.LAYER_STACK_CONFIG, defaultLayerStackConfig)
+  )
 
   // Persist config to sessionStorage
   const setConfig = useCallback((newConfig: SimulationConfig) => {
@@ -144,6 +170,18 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // Persist input mode to sessionStorage
+  const setInputMode = useCallback((newMode: InputMode) => {
+    setInputModeState(newMode)
+    saveToStorage(STORAGE_KEYS.INPUT_MODE, newMode)
+  }, [])
+
+  // Persist layer stack config to sessionStorage
+  const setLayerStackConfig = useCallback((newConfig: LayerStackConfig) => {
+    setLayerStackConfigState(newConfig)
+    saveToStorage(STORAGE_KEYS.LAYER_STACK_CONFIG, newConfig)
+  }, [])
+
   // Clear results but keep config
   const clearResults = useCallback(() => {
     setResultState(null)
@@ -159,6 +197,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     setSweepResultsState([])
     setSweepsState([])
     setGraphSettingsState(defaultGraphSettings)
+    setInputModeState('simple')
+    setLayerStackConfigState(defaultLayerStackConfig)
     Object.values(STORAGE_KEYS).forEach(key => sessionStorage.removeItem(key))
   }, [])
 
@@ -168,12 +208,16 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     sweepResults,
     sweeps,
     graphSettings,
+    inputMode,
+    layerStackConfig,
     setConfig,
     setResult,
     setSweepResults,
     setSweeps,
     setGraphSettings,
     updateGraphSettings,
+    setInputMode,
+    setLayerStackConfig,
     clearResults,
     resetAll,
   }
@@ -193,4 +237,5 @@ export function useSimulation() {
   return context
 }
 
-export { defaultGraphSettings }
+export { defaultGraphSettings, defaultLayerStackConfig }
+export type { LayerStackConfig }

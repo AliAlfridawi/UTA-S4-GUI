@@ -1,16 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import SimulationForm from '@/components/SimulationForm'
-import SweepConfigComponent from '@/components/SweepConfig'
+import LayerStackBuilder from '@/components/LayerStackBuilder'
 import SpectraPlot from '@/components/SpectraPlot'
 import PhasePlot from '@/components/PhasePlot'
 import { toast } from '@/hooks/use-toast'
-import { ValidationResult } from '@/lib/validation'
 import { useSimulation } from '@/context/SimulationContext'
+import { convertLayerStackToSimConfig } from '@/lib/utils'
 import {
   JobInfo,
   SimulationResult,
@@ -44,10 +43,10 @@ export default function HomePage() {
     setResult,
     sweepResults,
     setSweepResults,
-    sweeps,
-    setSweeps,
     graphSettings,
     updateGraphSettings,
+    layerStackConfig,
+    setLayerStackConfig,
     clearResults: _clearResults,
   } = useSimulation()
   
@@ -59,16 +58,8 @@ export default function HomePage() {
   const [configName, setConfigName] = useState('')
   const [savedConfigs, setSavedConfigs] = useState<{ name: string; path: string }[]>([])
   
-  // Validation state
-  const [validation, setValidation] = useState<ValidationResult | null>(null)
-  
   // Ref for scrolling to results
   const resultsRef = useRef<HTMLDivElement>(null)
-  
-  // Validation callback
-  const handleValidationChange = useCallback((v: ValidationResult) => {
-    setValidation(v)
-  }, [])
   
   // Check backend health on mount
   useEffect(() => {
@@ -96,17 +87,15 @@ export default function HomePage() {
 
   // Run single simulation
   const handleRunSimulation = async () => {
-    if (validation && !validation.isValid) {
-      toast.error('Invalid Configuration', 'Please fix the errors before running')
-      return
-    }
+    // Convert layer stack to sim config for API
+    const activeConfig = convertLayerStackToSimConfig(layerStackConfig, config)
     
     setIsRunning(true)
     setError(null)
     setResult(null)
 
     try {
-      const simResult = await runSimulation(config)
+      const simResult = await runSimulation(activeConfig)
       setResult(simResult)
       toast.success('Simulation Complete', 'Results are ready to view')
     } catch (err) {
@@ -118,65 +107,11 @@ export default function HomePage() {
     }
   }
 
-  // Run parameter sweep
-  const handleRunSweep = async () => {
-    if (validation && !validation.isValid) {
-      toast.error('Invalid Configuration', 'Please fix the errors before running')
-      return
-    }
-    
-    setIsRunning(true)
-    setError(null)
-    setSweepResults([])
-    setProgress(null)
-
-    try {
-      const sweepConfig = {
-        base_config: config,
-        sweeps: sweeps,
-      }
-
-      const { job_id } = await startSweep(sweepConfig)
-      toast.info('Sweep Started', `Running ${sweeps.length} parameter sweep`)
-
-      // Connect to WebSocket for progress updates
-      connectToProgress(
-        job_id,
-        (info) => {
-          setProgress(info)
-          if (info.status === 'completed') {
-            // Fetch results
-            getSweepResults(job_id).then((data) => {
-              setSweepResults(data.results)
-              setIsRunning(false)
-              toast.success('Sweep Complete', `${data.results.length} configurations processed`)
-            })
-          } else if (info.status === 'failed') {
-            setError(info.error || 'Sweep failed')
-            setIsRunning(false)
-            toast.error('Sweep Failed', info.error || 'An error occurred')
-          }
-        },
-        () => {
-          setError('WebSocket connection failed')
-          toast.error('Connection Failed', 'WebSocket connection lost')
-        },
-        () => {}
-      )
-
-      // Cleanup on unmount would go here
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to start sweep'
-      setError(errorMsg)
-      setIsRunning(false)
-      toast.error('Failed to Start Sweep', errorMsg)
-    }
-  }
-
-  // Save configuration
+  // Save configuration (converts layer stack to sim config for storage)
   const handleSaveConfig = async () => {
     try {
-      await saveConfig(config, configName || undefined)
+      const configToSave = convertLayerStackToSimConfig(layerStackConfig, config)
+      await saveConfig(configToSave, configName || undefined)
       const data = await listConfigs()
       setSavedConfigs(data.configs)
       setConfigName('')
@@ -214,15 +149,10 @@ export default function HomePage() {
     }
   }
 
-  // Calculate preview info
+  // Calculate preview info from layer stack
   const numWavelengths = Math.floor(
     Math.abs(config.wavelength.end - config.wavelength.start) / config.wavelength.step
   ) + 1
-  
-  const numSweepConfigs = sweeps.reduce((total, sweep) => {
-    const points = Math.floor(Math.abs(sweep.end - sweep.start) / sweep.step) + 1
-    return total * points
-  }, 1)
 
   return (
     <div className="space-y-6">
@@ -259,18 +189,9 @@ export default function HomePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Configuration */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Simulation Form */}
-          <SimulationForm
-            config={config}
-            onChange={setConfig}
-            disabled={isRunning}
-            onValidationChange={handleValidationChange}
-          />
-
-          {/* Parameter Sweep */}
-          <SweepConfigComponent
-            sweeps={sweeps}
-            onChange={setSweeps}
+          <LayerStackBuilder
+            config={layerStackConfig}
+            onChange={setLayerStackConfig}
             disabled={isRunning}
           />
         </div>
@@ -282,51 +203,28 @@ export default function HomePage() {
             <CardHeader>
               <CardTitle>Run Simulation</CardTitle>
               <CardDescription>
-                {sweeps.length > 0
-                  ? `Sweep: ${numSweepConfigs} configs × ${numWavelengths} wavelengths`
-                  : `Single: ${numWavelengths} wavelength points`}
+                {`Single: ${numWavelengths} wavelength points`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {sweeps.length === 0 ? (
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={handleRunSimulation}
-                  disabled={isRunning || (validation !== null && !validation.isValid)}
-                >
-                  {isRunning ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Running...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Run Simulation
-                    </>
-                  )}
-                </Button>
-              ) : (
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={handleRunSweep}
-                  disabled={isRunning || (validation !== null && !validation.isValid)}
-                >
-                  {isRunning ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Sweeping...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Run Sweep ({numSweepConfigs} configs)
-                    </>
-                  )}
-                </Button>
-              )}
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={handleRunSimulation}
+                disabled={isRunning}
+              >
+                {isRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Running...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Run Simulation
+                  </>
+                )}
+              </Button>
 
               {/* Progress */}
               {progress && (
